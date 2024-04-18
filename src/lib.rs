@@ -36,6 +36,7 @@ mod gig_hub_app {
         Ok(())
     }
 
+
     pub fn create_contract_giger(
         ctx: Context<CreateContract>,
         title: String,
@@ -46,15 +47,23 @@ mod gig_hub_app {
         price: u64,
         assigned_admin_account: SignerAccounts,
     ) -> Result<(), GigHubError> {
-        let contract_account = &mut ctx.accounts.contract_account;
+        // Validate input parameters
+        if title.is_empty() || description.is_empty() || price == 0 {
+            return Err(GigHubError::InvalidInput);
+        }
 
+        let contract_account = &mut ctx.accounts.contract_account;
         let user_profile = &mut ctx.accounts.user_profile;
 
+        // Validate authority
+        if ctx.accounts.authority.key() != contract_account.authority {
+            return Err(GigHubError::Unauthorized);
+        }
+
         contract_account.assigned_admin = Some(assigned_admin_account);
-        contract_account.toAssign = to_assign;
-        ctx.accounts.master.master_contract_count += 1; 
+        contract_account.to_assign = to_assign;
+        ctx.accounts.master.master_contract_count += 1;
         contract_account.assigned_master = ctx.accounts.master.master_contract_count;
-        contract_account.authority = ctx.accounts.authority.key();
         contract_account.idx = user_profile.last_contract;
         contract_account.title = title;
         contract_account.description = description;
@@ -63,27 +72,35 @@ mod gig_hub_app {
         contract_account.price = price;
         contract_account.status = "Deployed".to_string();
 
-        contract_account.created_freelancer = Some(SignerAccounts{
+        contract_account.created_freelancer = Some(SignerAccounts {
             wallet_adress: ctx.accounts.authority.key(),
         });
 
-        user_profile.last_contract = user_profile.last_contract
-        .checked_add(1)
-        .unwrap();
+        user_profile.last_contract = user_profile
+            .last_contract
+            .checked_add(1)
+            .ok_or(GigHubError::InvalidContractCount)?;
 
-        user_profile.contract_count = user_profile.contract_count
-        .checked_add(1)
-        .unwrap();
+        user_profile.contract_count = user_profile
+            .contract_count
+            .checked_add(1)
+            .ok_or(GigHubError::InvalidContractCount)?;
 
         Ok(())
     }
 
+    
     pub fn take_contract(
         ctx: Context<TakeContract>,
         assigned_master: u8,
 
     ) -> Result<(), GigHubError> {
-        let contract_account = &mut ctx.accounts.contract_account;
+        l let contract_account = &mut ctx.accounts.contract_account;
+
+        // Validate authority
+        if ctx.accounts.authority.key() != contract_account.authority {
+            return Err(GigHubError::Unauthorized);
+        }
 
         contract_account.confermed_assign = Some(SignerAccounts {
             wallet_adress: ctx.accounts.authority.key(),
@@ -116,7 +133,13 @@ mod gig_hub_app {
     }
 
     pub fn do_payment(ctx: Context<DoPayment>, assigned_master: u8, who: u8,) -> Result<(), GigHubError> {
+        let contract_account = &mut ctx.accounts.contract_account;
 
+        // Validate authority
+        if ctx.accounts.authority.key() != contract_account.authority {
+            return Err(GigHubError::Unauthorized);
+        }
+        
         **ctx
             .accounts
             .contract_account
